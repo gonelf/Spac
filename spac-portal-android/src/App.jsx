@@ -104,6 +104,7 @@ const STYLES = `
 .btn:active { transform:translateY(0); }
 .btn.full { width:100%; justify-content:center; margin-top:6px; }
 .hint { font-size:12px; color:var(--faint); margin-top:16px; }
+.loginerr { color:var(--red); font-size:13px; margin:2px 0 10px; }
 .stub-plane { color:var(--amber); }
 .stub-foot { font-family:'Space Mono',monospace; font-size:11px; color:var(--muted); letter-spacing:.1em; }
 .barcode { display:flex; gap:2px; height:46px; margin-top:8px; }
@@ -408,12 +409,17 @@ export default function App() {
   const [num, setNum] = useState("");
   const [pwd, setPwd] = useState("");
   const [member, setMember] = useState(null);
+  const [authErr, setAuthErr] = useState("");
 
   function login() {
-    const n = num.trim() || "04821";
+    if (num.trim().toLowerCase() !== "spac test" || pwd !== "prccrules") {
+      setAuthErr("Incorrect username or password.");
+      return;
+    }
+    setAuthErr("");
     setMember({
       name: "Ana Sofia Carvalho",
-      number: n,
+      number: "04821",
       status: "Full member",
       role: "Captain (CPT)",
       scaleYear: 8,
@@ -434,10 +440,10 @@ export default function App() {
     <div className="spac-app">
       <style>{STYLES}</style>
       {view === "login" ? (
-        <Login num={num} setNum={setNum} pwd={pwd} setPwd={setPwd} onLogin={login} />
+        <Login num={num} setNum={setNum} pwd={pwd} setPwd={setPwd} onLogin={login} authErr={authErr} clearErr={() => setAuthErr("")} />
       ) : (
         <>
-          <Board member={member} onLogout={() => { setView("login"); setNum(""); setPwd(""); }} />
+          <Board member={member} onLogout={() => { setView("login"); setNum(""); setPwd(""); setAuthErr(""); }} />
           <div className="shell">
             {view === "home" && <Home onPick={setView} />}
             {view === "member" && <Member member={member} onBack={() => setView("home")} />}
@@ -452,7 +458,7 @@ export default function App() {
   );
 }
 
-function Login({ num, setNum, pwd, setPwd, onLogin }) {
+function Login({ num, setNum, pwd, setPwd, onLogin, authErr, clearErr }) {
   const submit = (e) => { e.preventDefault?.(); onLogin(); };
   return (
     <div className="login-wrap">
@@ -467,17 +473,18 @@ function Login({ num, setNum, pwd, setPwd, onLogin }) {
           <h1>Portuguese Civil Aviation Union</h1>
           <p className="lead">Access your member record and the Company Agreement assistant. Sign in to continue.</p>
           <div className="field">
-            <label htmlFor="num">Member number</label>
-            <input id="num" inputMode="numeric" placeholder="e.g. 04821" value={num}
-              onChange={(e) => setNum(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit(e)} />
+            <label htmlFor="num">Username</label>
+            <input id="num" placeholder="username" autoCapitalize="none" autoCorrect="off" value={num}
+              onChange={(e) => { setNum(e.target.value); clearErr(); }} onKeyDown={(e) => e.key === "Enter" && submit(e)} />
           </div>
           <div className="field">
             <label htmlFor="pwd">Password</label>
             <input id="pwd" type="password" placeholder="••••••••" value={pwd}
-              onChange={(e) => setPwd(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit(e)} />
+              onChange={(e) => { setPwd(e.target.value); clearErr(); }} onKeyDown={(e) => e.key === "Enter" && submit(e)} />
           </div>
+          {authErr && <p className="loginerr">{authErr}</p>}
           <button className="btn full" onClick={onLogin} type="button">Sign in {I.next()}</button>
-          <p className="hint">Demo prototype — any number and password will sign you in.</p>
+          <p className="hint">For authorised SPAC members.</p>
         </div>
       </div>
     </div>
