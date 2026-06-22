@@ -1,0 +1,70 @@
+name: Build Android APK
+
+# Builds the SPAC Portal Capacitor app into an installable debug .apk.
+# Runs on GitHub-hosted runners, which ship the Android SDK and have the
+# network access to Google's Maven repo that a sandboxed dev box may lack.
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "spac-portal-android/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: spac-portal-android
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: spac-portal-android/package-lock.json
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install build/platform tools
+        run: |
+          yes | sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" >/dev/null
+
+      - name: Install web dependencies
+        run: npm ci
+
+      - name: Build web assets
+        run: npm run build
+
+      - name: Add Android platform
+        run: npx cap add android
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --no-daemon
+        working-directory: spac-portal-android/android
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: spac-portal-debug-apk
+          path: spac-portal-android/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
