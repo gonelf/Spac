@@ -10,6 +10,16 @@ WASM/CPU). No Anthropic API, no API key, no backend. The model weights (~0.5 GB)
 download once from the Hugging Face hub on first use and are then cached for fully
 offline operation. See "On-device AI assistant" below.
 
+## Try it without building (hosted web app / PWA)
+
+No native build required — the same app is published to GitHub Pages:
+
+**https://gonelf.github.io/Spac/**
+
+Open it in any browser. On iOS Safari or Android Chrome use **Share → Add to
+Home Screen** to install it as a PWA. (First use of the assistant downloads the
+~0.5 GB model once; in mobile Safari that cache can be evicted between sessions.)
+
 ---
 
 ## What's in here
