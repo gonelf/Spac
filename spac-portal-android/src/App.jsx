@@ -1,11 +1,13 @@
 import React, { useState, useRef, useEffect } from "react";
+import { generate, loadModel } from "./llm.js";
+import { retrieve } from "./retrieval.js";
 
 /*
   Portuguese Civil Aviation Union — member portal prototype.
   - Login (boarding-pass styled) — any member number + password signs in (demo).
   - Menu 1: My member record (demo data).
-  - Menu 2: Company Agreement assistant — upload the Agreement PDF and the AI
-    answers questions from it (Anthropic Messages API, no key required).
+  - Menu 2: Company Agreement assistant — answers questions about the Agreement
+    using a small AI model running on-device (Transformers.js, no API/key).
 */
 
 const STYLES = `
@@ -193,12 +195,15 @@ const STYLES = `
 .chat-top .swap { margin-left:auto; background:none; border:1px solid var(--line); color:var(--muted);
   border-radius:8px; padding:7px 11px; cursor:pointer; font-family:inherit; font-size:12px; }
 .chat-top .swap:hover { color:var(--ink); border-color:var(--faint); }
+.modelchip { margin-left:auto; font-family:'Space Mono',monospace; font-size:11px; letter-spacing:.02em;
+  border:1px solid var(--line); border-radius:999px; padding:5px 10px; white-space:nowrap; }
+.modelchip.loading { color:var(--amber-d); border-color:var(--amber); background:rgba(224,153,31,.08); }
+.modelchip.ready { color:var(--green); border-color:var(--green); background:rgba(47,158,110,.08); }
+.modelchip.error { color:var(--red); border-color:var(--red); background:rgba(217,84,75,.08); }
 .keybar { display:flex; align-items:center; gap:12px; padding:12px 20px; border-bottom:1px solid var(--line); background:var(--surf); }
-.keybar input { flex:1; background:var(--bg2); border:1px solid var(--line); border-radius:8px; color:var(--ink);
-  padding:9px 12px; font-family:inherit; font-size:13px; outline:none; }
-.keybar input:focus { border-color:var(--cyan); box-shadow:0 0 0 3px rgba(21,119,184,.18); }
-.keyhint { font-size:11px; color:var(--faint); white-space:nowrap; }
-@media (max-width:720px){ .keyhint{ display:none; } }
+.modelbar { flex:0 0 120px; height:6px; border-radius:999px; background:var(--surf2); overflow:hidden; }
+.modelbar span { display:block; height:100%; background:var(--amber); transition:width .3s ease; }
+.keyhint { font-size:11px; color:var(--muted); line-height:1.4; }
 
 .drop { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
   text-align:center; padding:40px; gap:14px; }
@@ -811,14 +816,32 @@ function Chat({ onBack, memberNum }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [over, setOver] = useState(false);
-  const [apiKey, setApiKey] = useState("");   // only needed outside Claude (e.g. CodeSandbox)
-  const [showKey, setShowKey] = useState(false);
+  const [model, setModel] = useState({ state: "loading", pct: 0, note: "Preparing local model…" });
   const fileRef = useRef(null);
   const streamRef = useRef(null);
 
   useEffect(() => {
     if (streamRef.current) streamRef.current.scrollTop = streamRef.current.scrollHeight;
   }, [msgs, busy]);
+
+  // Start loading (and, on first ever use, downloading) the on-device model as
+  // soon as the assistant opens, so it's ready by the time the pilot asks.
+  useEffect(() => {
+    let alive = true;
+    const files = {};
+    loadModel((p) => {
+      if (!alive) return;
+      if (p.status === "progress") {
+        files[p.file] = typeof p.progress === "number" ? p.progress : 0;
+        const vals = Object.values(files);
+        const pct = Math.round(vals.reduce((a, b) => a + b, 0) / (vals.length || 1));
+        setModel({ state: "loading", pct, note: `Downloading model… ${pct}%` });
+      }
+    })
+      .then(() => alive && setModel({ state: "ready", pct: 100, note: "Local model ready · offline" }))
+      .catch((e) => alive && setModel({ state: "error", pct: 0, note: "Model failed to load: " + (e?.message || e) }));
+    return () => { alive = false; };
+  }, []);
 
   function readFile(file) {
     if (!file) return;
@@ -832,47 +855,55 @@ function Chat({ onBack, memberNum }) {
 
   async function ask(question) {
     const q = question.trim();
-    if (!q || busy || !pdf) return;
+    if (!q || busy) return;
     setErr("");
-    const next = [...msgs, { role: "user", text: q }];
-    setMsgs(next);
+    setMsgs((m) => [...m, { role: "user", text: q }]);
     setInput("");
     setBusy(true);
     try {
-      const apiMessages = next.map((m, i) => {
-        if (i === 0 && m.role === "user") {
-          return { role: "user", content:
-            SYSTEM_PROMPT +
-            "\n\n=== COMPANY AGREEMENT (full text) ===\n" + CLA_TEXT +
-            "\n=== END OF AGREEMENT ===\n\nMember question: " + m.text };
-        }
-        return { role: m.role, content: m.text };
+      // Pull the most relevant agreement sections and hand only those to the
+      // on-device model so the prompt stays small enough to run on a phone.
+      const context = retrieve(CLA_TEXT, q, { k: 5, budget: 3500 });
+      const messages = [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content:
+          "Answer using ONLY the following extracts from the Collective Labour Agreement.\n\n" +
+          "=== RELEVANT EXTRACTS ===\n" + context + "\n=== END OF EXTRACTS ===\n\n" +
+          "Question: " + q },
+      ];
+
+      // Stream tokens into a single assistant bubble as they arrive.
+      let started = false;
+      const text = await generate(messages, {
+        onToken: (t) => {
+          if (!started) {
+            started = true;
+            setMsgs((m) => [...m, { role: "assistant", text: t }]);
+          } else {
+            setMsgs((m) => {
+              const c = [...m];
+              c[c.length - 1] = { role: "assistant", text: c[c.length - 1].text + t };
+              return c;
+            });
+          }
+        },
       });
-      const headers = { "Content-Type": "application/json" };
-      if (apiKey.trim()) {
-        // Direct browser call (outside Claude). Note: this exposes the key to users of the page.
-        headers["x-api-key"] = apiKey.trim();
-        headers["anthropic-version"] = "2023-06-01";
-        headers["anthropic-dangerous-direct-browser-access"] = "true";
+
+      const answer = (text || "").trim();
+      if (!started) {
+        setMsgs((m) => [...m, { role: "assistant", text:
+          answer || "I couldn't find an answer to that in the agreement. Please rephrase, or contact the union." }]);
+      } else if (answer && answer.length) {
+        // Reconcile the bubble with the model's final, fully-decoded text.
+        setMsgs((m) => {
+          const c = [...m];
+          c[c.length - 1] = { role: "assistant", text: answer };
+          return c;
+        });
       }
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1024, messages: apiMessages }),
-      });
-      if (!res.ok) {
-        throw new Error(res.status === 401
-          ? "Authentication failed. Running outside Claude? Open the API key panel and paste a valid Anthropic API key."
-          : "HTTP " + res.status);
-      }
-      const data = await res.json();
-      const text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
-      setMsgs((m) => [...m, { role: "assistant", text: text || "I couldn't produce an answer. Try rephrasing your question." }]);
     } catch (e) {
-      const known = e && e.message && (e.message.startsWith("Authentication") || e.message.startsWith("HTTP"));
-      setErr(known
-        ? e.message
-        : "Couldn't reach the assistant. Running outside Claude (e.g. CodeSandbox)? Open the API key panel and paste a valid Anthropic API key.");
+      setErr("The local assistant couldn't run: " + (e?.message || e) +
+        (model.state !== "ready" ? " The model may still be downloading — this needs internet only on first use." : ""));
       setMsgs((m) => m.slice(0, -1)); // remove the pending user msg so it can be re-sent
       setInput(q);
     } finally {
@@ -890,13 +921,20 @@ function Chat({ onBack, memberNum }) {
           <div className="doc">
             <><b>{pdf.name}</b> · {pdf.desc}</>
           </div>
-          <button className="swap" onClick={() => setShowKey((s) => !s)}>API key</button>
+          <span className={"modelchip " + model.state} title={model.note}>
+            {model.state === "ready" ? "● Local model" : model.state === "error" ? "● Model error" : `● ${model.pct}%`}
+          </span>
         </div>
-        {showKey && (
+        {model.state !== "ready" && (
           <div className="keybar">
-            <input type="password" placeholder="Anthropic API key — only needed when running outside Claude"
-              value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
-            <span className="keyhint">Kept in memory for this session only.</span>
+            {model.state === "loading" && (
+              <div className="modelbar"><span style={{ width: model.pct + "%" }} /></div>
+            )}
+            <span className="keyhint">
+              {model.state === "error"
+                ? model.note
+                : "The on-device AI model is downloading (first use only, ~0.5 GB). After this it runs fully offline — no API key, no internet."}
+            </span>
           </div>
         )}
 
@@ -934,7 +972,7 @@ function Chat({ onBack, memberNum }) {
                   <div className="bubble">{m.text}</div>
                 </div>
               ))}
-              {busy && (
+              {busy && (msgs.length === 0 || msgs[msgs.length - 1].role === "user") && (
                 <div className="msg bot"><span className="mini bot">{I.plane()}</span>
                   <div className="bubble"><span className="typing"><i /><i /><i /></span></div>
                 </div>
@@ -957,7 +995,7 @@ function Chat({ onBack, memberNum }) {
           </>
         )}
       </div>
-      <p className="note">Answers are generated by AI from the PDF you uploaded and may contain errors. When in doubt, always confirm with the union.</p>
+      <p className="note">Answers are generated on-device by a small AI model from the embedded agreement and may contain errors. When in doubt, always confirm with the union.</p>
     </>
   );
 }

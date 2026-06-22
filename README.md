@@ -5,8 +5,10 @@
 
 The app source lives in [`spac-portal-android/`](./spac-portal-android/). It is a
 web app (React) wrapped in a Capacitor shell so it can be compiled into an
-installable `.apk`. Most of it runs offline; only the Company Agreement assistant
-needs network (Anthropic API). See the
+installable `.apk`. It runs fully on-device — the Company Agreement assistant uses a
+small AI model (Qwen2.5-0.5B-Instruct) running **locally** via Transformers.js, with
+no Anthropic API or key. The model weights download once on first use and are then
+cached for offline operation. See the
 [project README](./spac-portal-android/README.md) for full build instructions.
 
 App id: `pt.spac.portal` · App name: `SPAC Portal`

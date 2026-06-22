@@ -3,9 +3,12 @@
 This wraps the SPAC member-portal demo (React) into a native Android app using
 **Capacitor**, so you can produce an installable `.apk`.
 
-The whole app runs offline **except the Company Agreement assistant**, which calls
-the Anthropic API and therefore needs either your own API key (entered in the app)
-or a backend proxy. See "Chatbot / API key" below.
+The whole app runs **on-device** — including the Company Agreement assistant, which
+uses a small AI model (Qwen2.5-0.5B-Instruct) running locally via
+[Transformers.js](https://github.com/huggingface/transformers.js) (ONNX Runtime,
+WASM/CPU). No Anthropic API, no API key, no backend. The model weights (~0.5 GB)
+download once from the Hugging Face hub on first use and are then cached for fully
+offline operation. See "On-device AI assistant" below.
 
 ---
 
@@ -16,9 +19,11 @@ spac-portal-android/
 ├── index.html            # web entry
 ├── src/
 │   ├── main.jsx          # mounts <App/>
-│   └── App.jsx           # the full portal component (login, menus, chatbot…)
-├── vite.config.js        # Vite build (base:"./" for the WebView)
-├── capacitor.config.json # app id/name + CapacitorHttp (bypasses CORS on device)
+│   ├── App.jsx           # the full portal component (login, menus, chatbot…)
+│   ├── llm.js            # on-device LLM (Transformers.js / ONNX / WASM)
+│   └── retrieval.js      # TF-IDF retrieval over the embedded agreement
+├── vite.config.js        # Vite build (base:"./"; bundles the ONNX WASM runtime)
+├── capacitor.config.json # app id/name
 └── package.json
 ```
 
@@ -87,23 +92,35 @@ then rebuild the APK.
 
 ---
 
-## Chatbot / API key
+## On-device AI assistant
 
-Inside Claude's preview the assistant works with no key because Anthropic proxies
-the request. On a device there is no proxy, so:
+The Company Agreement assistant runs a small language model **entirely on the phone** —
+there is no Anthropic API call and no API key.
 
-- **Quick (demo): bring your own key.** Open the assistant, tap **API key**, paste an
-  Anthropic API key (from https://console.anthropic.com). `CapacitorHttp` is enabled
-  in `capacitor.config.json`, so the request goes through native networking and the
-  call succeeds. ⚠️ A key shipped/typed on the client is visible to whoever uses the
-  app — fine for a personal demo, **not** for public distribution.
+How it works (`src/llm.js` + `src/retrieval.js`):
 
-- **Proper (production): a backend proxy.** Stand up a tiny server (serverless function
-  is fine) that holds `ANTHROPIC_API_KEY` as a secret and forwards requests to
-  `https://api.anthropic.com/v1/messages`. Then in `src/App.jsx` change the one
-  `fetch("https://api.anthropic.com/v1/messages", …)` to point at your endpoint and
-  remove the key field. The other four menus (member record, contract & pay, health,
-  contact a rep) need no network and work offline.
+1. **Retrieval.** For each question, a tiny TF-IDF scorer (`retrieval.js`) picks the
+   few most relevant sections of the embedded agreement, so the prompt stays small
+   enough to run on-device.
+2. **Generation.** Those sections + the question are passed to
+   **Qwen2.5-0.5B-Instruct** running via [Transformers.js](https://github.com/huggingface/transformers.js)
+   on the ONNX Runtime **WASM/CPU** backend (single-threaded, no WebGPU required), and
+   the answer is streamed back into the chat.
+
+**Model download & offline use.** The ONNX Runtime WASM is bundled in the APK (copied
+into the web root by `vite-plugin-static-copy`), so the runtime works offline. The model
+**weights (~0.5 GB)** are fetched once from the Hugging Face hub on first use and cached
+by the WebView (`env.useBrowserCache`), after which the assistant works **fully offline**.
+A progress bar in the assistant header shows the one-time download.
+
+**Tuning.** Change `MODEL_ID` / `DTYPE` in `src/llm.js` to swap models (e.g. a larger
+`Qwen2.5-1.5B-Instruct`, or a smaller `SmolLM2-360M-Instruct` for slower devices), and
+`max_new_tokens` for longer/shorter answers. The other four menus (member record,
+contract & pay, health, contact a rep) need no network and work offline regardless.
+
+> Note: on-device inference of a 0.5 B model on a phone CPU is slower than a cloud API
+> (expect tens of seconds for a full answer) and lower quality than a frontier model —
+> the trade-off for zero-cost, private, offline operation.
 
 ---
 
