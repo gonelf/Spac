@@ -13,7 +13,10 @@ import { pipeline, env, TextStreamer } from "@huggingface/transformers";
 */
 
 // Use the WASM binary we ship with the app instead of fetching it from a CDN.
-env.backends.onnx.wasm.wasmPaths = "/";
+// Resolve it relative to where the app is served (web root in the Capacitor
+// WebView, or a project subpath like "/Spac/" on GitHub Pages) so it loads in both.
+env.backends.onnx.wasm.wasmPaths =
+  typeof document !== "undefined" ? new URL("./", document.baseURI).href : "/";
 // No cross-origin isolation inside the WebView, so run single-threaded on the
 // main thread (no SharedArrayBuffer / worker proxy required).
 env.backends.onnx.wasm.numThreads = 1;
