@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-apk:
@@ -62,9 +62,21 @@ jobs:
         run: ./gradlew assembleDebug --no-daemon
         working-directory: spac-portal-android/android
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: spac-portal-debug-apk
           path: spac-portal-android/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Publish APK to a GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-latest
+          name: SPAC Portal — latest debug APK
+          body: |
+            Auto-built debug APK for the SPAC Portal Android app.
+            Commit: ${{ github.sha }}
+            Download `app-debug.apk` below and install it on an Android device.
+          files: spac-portal-android/android/app/build/outputs/apk/debug/app-debug.apk
+          fail_on_unmatched_files: true
