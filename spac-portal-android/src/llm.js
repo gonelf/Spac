@@ -8,8 +8,9 @@ import { pipeline, env, TextStreamer } from "@huggingface/transformers";
 
   - The ONNX Runtime WASM binary is bundled in the app (copied to the web root by
     vite-plugin-static-copy), so the runtime itself works offline.
-  - The model weights (~0.5 GB) are downloaded once from the Hugging Face hub on
-    first use and cached by the browser, so subsequent runs are fully offline.
+  - The model weights are bundled with the app too (fetched at build time into
+    public/models/ by scripts/fetch-model.mjs), so they load locally with no
+    download. If they aren't present, we fall back to the Hugging Face hub.
 */
 
 // Use the WASM binary we ship with the app instead of fetching it from a CDN.
@@ -21,8 +22,15 @@ env.backends.onnx.wasm.wasmPaths =
 // main thread (no SharedArrayBuffer / worker proxy required).
 env.backends.onnx.wasm.numThreads = 1;
 env.backends.onnx.wasm.proxy = false;
-// Weights come from the hub and are cached for offline reuse.
-env.allowLocalModels = false;
+// Load the model from files bundled with the app (public/models/, populated by
+// scripts/fetch-model.mjs at build time) so it loads locally with no download.
+// localModelPath resolves relative to where the app is served — the web root in
+// the Capacitor WebView, or the project subpath ("/Spac/") on GitHub Pages.
+env.allowLocalModels = true;
+env.localModelPath =
+  typeof document !== "undefined" ? new URL("models/", document.baseURI).href : "/models/";
+// If the bundled files aren't found locally, fall back to the Hugging Face hub.
+env.allowRemoteModels = true;
 
 // Small instruction model with an ONNX build that runs on the WASM/CPU backend.
 // SmolLM2-360M is deliberately tiny so it loads on memory-constrained phone
