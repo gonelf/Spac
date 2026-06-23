@@ -6,6 +6,8 @@
   "description": "SPAC member portal — demo Android app (Capacitor + React + Vite)",
   "scripts": {
     "dev": "vite",
+    "fetch-model": "node scripts/fetch-model.mjs",
+    "prebuild": "node scripts/fetch-model.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "android:add": "cap add android",

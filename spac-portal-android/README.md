@@ -7,8 +7,9 @@ The whole app runs **on-device** — including the Company Agreement assistant, 
 uses a small AI model (SmolLM2-360M-Instruct) running locally via
 [Transformers.js](https://github.com/huggingface/transformers.js) (ONNX Runtime,
 WASM/CPU). No Anthropic API, no API key, no backend. The model weights (~0.2 GB,
-int4) download once from the Hugging Face hub on first use and are then cached for
-fully offline operation. See "On-device AI assistant" below.
+int4) are bundled with the app at build time, so the **APK loads the model locally
+with no download**. (On the web they're served from the app's own origin and cached
+after the first load.) See "On-device AI assistant" below.
 
 ## Try it without building (hosted web app / PWA)
 
@@ -59,6 +60,9 @@ App id: `pt.spac.portal`  ·  App name: `SPAC Portal`
 npm install
 
 # 2. build the web app into ./dist
+#    (this also downloads the model weights once into public/models/ via the
+#     "prebuild" script, so they get bundled into the app — needs internet here,
+#     but the resulting APK runs the model fully offline)
 npm run build
 
 # 3. add the native Android project (creates ./android)
@@ -118,24 +122,34 @@ How it works (`src/llm.js` + `src/retrieval.js`):
    on the ONNX Runtime **WASM/CPU** backend (single-threaded, no WebGPU required), and
    the answer is streamed back into the chat.
 
-**Model download & offline use.** The ONNX Runtime WASM is bundled in the APK (copied
-into the web root by `vite-plugin-static-copy`), so the runtime works offline. The model
-**weights (~0.2 GB, int4)** are fetched once from the Hugging Face hub on first use and
-cached by the WebView/browser, after which the assistant works **fully offline**.
-A progress bar in the assistant header shows the one-time download.
+**Bundled model — no download.** Both the ONNX Runtime WASM *and* the model weights are
+bundled with the app. `scripts/fetch-model.mjs` (run automatically by the `prebuild` npm
+script) downloads the **weights (~0.2 GB, int4)** once at build time into `public/models/`,
+which Vite copies into `dist/` and `cap sync` packages into the APK. At runtime
+Transformers.js loads them from local files (`env.localModelPath`):
+
+- **APK / native:** the model loads straight from app assets — **no download, no wait**,
+  fully offline from first launch.
+- **Web (GitHub Pages):** the model is served from the app's own origin (not the Hugging
+  Face hub) and cached by the browser after the first load.
+
+`public/models/` is git-ignored (the weights exceed GitHub's 100 MB file limit), so it is
+re-created by the build. If the build-time download can't run, the app falls back to
+fetching the model from the Hugging Face hub at runtime (`env.allowRemoteModels`).
 
 **Phone memory.** `src/llm.js` loads the smaller **int4** (`q4`) weights first and falls
 back to **int8** (`q8`) only if int4 is unavailable, because larger weights can exhaust a
 phone browser tab's memory and abort with a generic `"Load failed"`. The default model
 (SmolLM2-360M, ~0.2 GB int4) is deliberately tiny so it loads on memory-constrained
-phones (iOS WebKit — Safari/Brave). It also retries the download with the browser cache
-disabled, since some mobile browsers (e.g. iOS Brave) refuse to cache a large entry.
-If loading still fails on a constrained device, close other tabs/apps and reopen.
+phones (iOS WebKit — Safari/Brave). If loading still fails on a constrained device,
+close other tabs/apps and reopen.
 
 **Tuning.** Change `MODEL_ID` / `DTYPES` in `src/llm.js` to swap models — e.g. a larger,
 higher-quality `Qwen2.5-0.5B-Instruct` / `Qwen2.5-1.5B-Instruct` on roomier devices — and
-`max_new_tokens` for longer/shorter answers. The other four menus (member record,
-contract & pay, health, contact a rep) need no network and work offline regardless.
+`max_new_tokens` for longer/shorter answers. Keep `REPO` / `DTYPE_FILE` in
+`scripts/fetch-model.mjs` in sync so the new model is bundled too. The other four menus
+(member record, contract & pay, health, contact a rep) need no network and work offline
+regardless.
 
 > Note: on-device inference of a sub-1 B model on a phone CPU is slower than a cloud API
 > (expect tens of seconds for a full answer) and lower quality than a frontier model —

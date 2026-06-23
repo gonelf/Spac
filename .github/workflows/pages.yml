@@ -49,9 +49,21 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
+      # Cache the bundled model weights so we don't re-download ~0.2 GB from the
+      # Hugging Face hub on every deploy. fetch-model.mjs (run via "prebuild")
+      # skips files that are already present.
+      - name: Cache bundled model weights
+        uses: actions/cache@v4
+        with:
+          path: spac-portal-android/public/models
+          key: llm-model-${{ hashFiles('spac-portal-android/scripts/fetch-model.mjs') }}
+
       - name: Install dependencies
         run: npm ci
 
+      # Runs "prebuild" (scripts/fetch-model.mjs) to bundle the model into the
+      # web build, then builds. The model is served from this site, so users
+      # load it from your origin (cached after first load) instead of the hub.
       - name: Build web app
         run: npm run build
 
