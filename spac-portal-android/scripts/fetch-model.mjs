@@ -15,7 +15,7 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-const REPO = "onnx-community/SmolLM2-360M-Instruct";
+const REPO = "onnx-community/Qwen2.5-0.5B-Instruct";
 const DTYPE_FILE = "onnx/model_q4.onnx"; // matches DTYPES[0] = "q4" in src/llm.js
 
 // Files Transformers.js needs to load a text-generation pipeline. Anything in

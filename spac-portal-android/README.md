@@ -4,9 +4,9 @@ This wraps the SPAC member-portal demo (React) into a native Android app using
 **Capacitor**, so you can produce an installable `.apk`.
 
 The whole app runs **on-device** — including the Company Agreement assistant, which
-uses a small AI model (SmolLM2-360M-Instruct) running locally via
+uses a small AI model (Qwen2.5-0.5B-Instruct) running locally via
 [Transformers.js](https://github.com/huggingface/transformers.js) (ONNX Runtime,
-WASM/CPU). No Anthropic API, no API key, no backend. The model weights (~0.2 GB,
+WASM/CPU). No Anthropic API, no API key, no backend. The model weights (~0.3 GB,
 int4) are bundled with the app at build time, so the **APK loads the model locally
 with no download**. (On the web they're served from the app's own origin and cached
 after the first load.) See "On-device AI assistant" below.
@@ -19,7 +19,7 @@ No native build required — the same app is published to GitHub Pages:
 
 Open it in any browser. On iOS Safari or Android Chrome use **Share → Add to
 Home Screen** to install it as a PWA. (First use of the assistant downloads the
-model once (~0.2 GB); on memory-constrained phone browsers it can be evicted between
+model once (~0.3 GB); on memory-constrained phone browsers it can be evicted between
 sessions, and very low-memory devices may not be able to run it — see "Phone memory".)
 
 ---
@@ -118,13 +118,13 @@ How it works (`src/llm.js` + `src/retrieval.js`):
    few most relevant sections of the embedded agreement, so the prompt stays small
    enough to run on-device.
 2. **Generation.** Those sections + the question are passed to
-   **SmolLM2-360M-Instruct** running via [Transformers.js](https://github.com/huggingface/transformers.js)
+   **Qwen2.5-0.5B-Instruct** running via [Transformers.js](https://github.com/huggingface/transformers.js)
    on the ONNX Runtime **WASM/CPU** backend (single-threaded, no WebGPU required), and
    the answer is streamed back into the chat.
 
 **Bundled model — no download.** Both the ONNX Runtime WASM *and* the model weights are
 bundled with the app. `scripts/fetch-model.mjs` (run automatically by the `prebuild` npm
-script) downloads the **weights (~0.2 GB, int4)** once at build time into `public/models/`,
+script) downloads the **weights (~0.3 GB, int4)** once at build time into `public/models/`,
 which Vite copies into `dist/` and `cap sync` packages into the APK. At runtime
 Transformers.js loads them from local files (`env.localModelPath`):
 
@@ -140,14 +140,15 @@ fetching the model from the Hugging Face hub at runtime (`env.allowRemoteModels`
 **Phone memory.** `src/llm.js` loads the smaller **int4** (`q4`) weights first and falls
 back to **int8** (`q8`) only if int4 is unavailable, because larger weights can exhaust a
 phone browser tab's memory and abort with a generic `"Load failed"`. The default model
-(SmolLM2-360M, ~0.2 GB int4) is deliberately tiny so it loads on memory-constrained
-phones (iOS WebKit — Safari/Brave). If loading still fails on a constrained device,
-close other tabs/apps and reopen.
+(Qwen2.5-0.5B, ~0.3 GB int4) is small enough for most phones; on very low-memory devices
+it may still fail to load. If loading fails on a constrained device, close other
+tabs/apps and reopen, or pick a smaller model (below).
 
-**Tuning.** Change `MODEL_ID` / `DTYPES` in `src/llm.js` to swap models — e.g. a larger,
-higher-quality `Qwen2.5-0.5B-Instruct` / `Qwen2.5-1.5B-Instruct` on roomier devices — and
-`max_new_tokens` for longer/shorter answers. Keep `REPO` / `DTYPE_FILE` in
-`scripts/fetch-model.mjs` in sync so the new model is bundled too. The other four menus
+**Tuning.** Change `MODEL_ID` / `DTYPES` in `src/llm.js` to swap models — e.g. a smaller
+`HuggingFaceTB/SmolLM2-360M-Instruct` for very low-memory phones, or a larger
+`Qwen2.5-1.5B-Instruct` on roomier devices — and `max_new_tokens` for longer/shorter
+answers. Keep `REPO` / `DTYPE_FILE` in `scripts/fetch-model.mjs` in sync so the new model
+is bundled too. The other four menus
 (member record, contract & pay, health, contact a rep) need no network and work offline
 regardless.
 
