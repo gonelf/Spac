@@ -25,11 +25,13 @@ env.backends.onnx.wasm.proxy = false;
 env.allowLocalModels = false;
 
 // Small instruction model with an ONNX build that runs on the WASM/CPU backend.
-const MODEL_ID = "onnx-community/Qwen2.5-0.5B-Instruct";
-// int4 weights (~0.3 GB) load in roughly half the memory of int8 (~0.5 GB),
-// which matters on memory-constrained phone browsers (iOS WebKit — Safari and
-// Brave — kill a tab that allocates too much). We prefer q4 and fall back to
-// q8 if a device/repo can't use it. q8 is the broadly-supported safety net.
+// SmolLM2-360M is deliberately tiny so it loads on memory-constrained phone
+// browsers (iOS WebKit — Safari/Brave) where a 0.5 B model's weights can exhaust
+// the tab and abort with a generic "Load failed".
+const MODEL_ID = "onnx-community/SmolLM2-360M-Instruct";
+// int4 weights (~0.2 GB) load in roughly half the memory of int8 (~0.4 GB), which
+// matters on phones (iOS WebKit kills a tab that allocates too much). We prefer
+// q4 and fall back to q8 if a device/repo can't use it — q8 is the safety net.
 const DTYPES = ["q4", "q8"];
 
 // A failure that means "this weight file isn't in the repo" (so trying a

@@ -4,9 +4,12 @@ name: Deploy web app to GitHub Pages
 # opened (and "Add to Home Screen"-installed as a PWA) on iOS Safari, Android
 # Chrome, or any browser — no native build required.
 
+# The github-pages environment only allows deployments from the default branch,
+# so only run on main (and manual dispatch). Running on feature branches just
+# produced a doomed deploy that showed up as a failing check on every PR.
 on:
   push:
-    branches: ["**"]
+    branches: ["main"]
     paths:
       - "spac-portal-android/**"
       - ".github/workflows/pages.yml"
