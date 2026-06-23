@@ -33,11 +33,11 @@ env.localModelPath =
 env.allowRemoteModels = true;
 
 // Small instruction model with an ONNX build that runs on the WASM/CPU backend.
-// SmolLM2-360M is deliberately tiny so it loads on memory-constrained phone
-// browsers (iOS WebKit — Safari/Brave) where a 0.5 B model's weights can exhaust
-// the tab and abort with a generic "Load failed".
-const MODEL_ID = "onnx-community/SmolLM2-360M-Instruct";
-// int4 weights (~0.2 GB) load in roughly half the memory of int8 (~0.4 GB), which
+// onnx-community/Qwen2.5-0.5B-Instruct is a known public, transformers.js-ready
+// repo. (The earlier onnx-community/SmolLM2-360M-Instruct id returned HTTP 401
+// "Unauthorized" — it isn't publicly resolvable — so nothing ever loaded.)
+const MODEL_ID = "onnx-community/Qwen2.5-0.5B-Instruct";
+// int4 weights (~0.3 GB) load in roughly half the memory of int8 (~0.5 GB), which
 // matters on phones (iOS WebKit kills a tab that allocates too much). We prefer
 // q4 and fall back to q8 if a device/repo can't use it — q8 is the safety net.
 const DTYPES = ["q4", "q8"];
@@ -52,6 +52,21 @@ function isMissingFileError(e) {
     m.includes("no such file") ||
     m.includes("not found") ||
     m.includes("404")
+  );
+}
+
+// A failure where the model files couldn't be fetched at all (bad/private repo,
+// blocked request) rather than a device-resource problem — so the user-facing
+// hint shouldn't blame phone memory.
+function isFetchError(e) {
+  const m = String(e?.message || e).toLowerCase();
+  return (
+    m.includes("unauthorized") ||
+    m.includes("403") ||
+    m.includes("401") ||
+    m.includes("not found") ||
+    m.includes("404") ||
+    m.includes("could not locate")
   );
 }
 
@@ -78,11 +93,13 @@ async function build(onProgress) {
       }
     }
   }
-  throw new Error(
-    (lastErr?.message || lastErr || "unknown error") +
-      " — the on-device model couldn't load. On phones this is usually limited " +
-      "memory: close other tabs/apps and reopen, or try a desktop browser."
-  );
+  const detail = lastErr?.message || lastErr || "unknown error";
+  const hint = isFetchError(lastErr)
+    ? " — couldn't fetch the model files. Check the connection on first use; " +
+      "once loaded it works offline."
+    : " — the on-device model couldn't load. On phones this is usually limited " +
+      "memory: close other tabs/apps and reopen, or try a desktop browser.";
+  throw new Error(detail + hint);
 }
 
 // Loads (and caches) the text-generation pipeline. onProgress receives the
