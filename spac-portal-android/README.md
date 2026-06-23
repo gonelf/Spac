@@ -6,9 +6,9 @@ This wraps the SPAC member-portal demo (React) into a native Android app using
 The whole app runs **on-device** — including the Company Agreement assistant, which
 uses a small AI model (Qwen2.5-0.5B-Instruct) running locally via
 [Transformers.js](https://github.com/huggingface/transformers.js) (ONNX Runtime,
-WASM/CPU). No Anthropic API, no API key, no backend. The model weights (~0.5 GB)
-download once from the Hugging Face hub on first use and are then cached for fully
-offline operation. See "On-device AI assistant" below.
+WASM/CPU). No Anthropic API, no API key, no backend. The model weights (~0.3 GB,
+int4) download once from the Hugging Face hub on first use and are then cached for
+fully offline operation. See "On-device AI assistant" below.
 
 ## Try it without building (hosted web app / PWA)
 
@@ -18,7 +18,8 @@ No native build required — the same app is published to GitHub Pages:
 
 Open it in any browser. On iOS Safari or Android Chrome use **Share → Add to
 Home Screen** to install it as a PWA. (First use of the assistant downloads the
-~0.5 GB model once; in mobile Safari that cache can be evicted between sessions.)
+model once (~0.3 GB); on memory-constrained phone browsers it can be evicted between
+sessions, and very low-memory devices may not be able to run it — see "Phone memory".)
 
 ---
 
@@ -119,11 +120,18 @@ How it works (`src/llm.js` + `src/retrieval.js`):
 
 **Model download & offline use.** The ONNX Runtime WASM is bundled in the APK (copied
 into the web root by `vite-plugin-static-copy`), so the runtime works offline. The model
-**weights (~0.5 GB)** are fetched once from the Hugging Face hub on first use and cached
-by the WebView (`env.useBrowserCache`), after which the assistant works **fully offline**.
+**weights (~0.3 GB, int4)** are fetched once from the Hugging Face hub on first use and
+cached by the WebView/browser, after which the assistant works **fully offline**.
 A progress bar in the assistant header shows the one-time download.
 
-**Tuning.** Change `MODEL_ID` / `DTYPE` in `src/llm.js` to swap models (e.g. a larger
+**Phone memory.** `src/llm.js` loads the smaller **int4** (`q4`) weights first and falls
+back to **int8** (`q8`) only if int4 is unavailable, because int8 (~0.5 GB) can exhaust a
+phone browser tab's memory and abort with a generic `"Load failed"`. It also retries the
+download with the browser cache disabled, since some mobile browsers (e.g. iOS Brave)
+refuse to cache an entry that large. If loading still fails on a constrained device,
+close other tabs/apps and reopen, or drop to a smaller model (below).
+
+**Tuning.** Change `MODEL_ID` / `DTYPES` in `src/llm.js` to swap models (e.g. a larger
 `Qwen2.5-1.5B-Instruct`, or a smaller `SmolLM2-360M-Instruct` for slower devices), and
 `max_new_tokens` for longer/shorter answers. The other four menus (member record,
 contract & pay, health, contact a rep) need no network and work offline regardless.
