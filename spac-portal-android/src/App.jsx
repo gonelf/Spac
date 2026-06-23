@@ -4,7 +4,8 @@ import { retrieve } from "./retrieval.js";
 
 /*
   Portuguese Civil Aviation Union — member portal prototype.
-  - Login (boarding-pass styled) — any member number + password signs in (demo).
+  - Login (boarding-pass styled) — fixed demo credentials sign in. The session is
+    saved on the device, so the app reopens already signed in; "Sign out" clears it.
   - Menu 1: My member record (demo data).
   - Menu 2: Company Agreement assistant — answers questions about the Agreement
     using a small AI model running on-device (Transformers.js, no API/key).
@@ -404,11 +405,48 @@ const SUGGESTIONS = [
   "What is the per diem for out-of-base overnights?",
 ];
 
+// Persisted login. We keep the signed-in member on the device (no password is
+// ever stored) so the app reopens already signed in; "Sign out" removes it.
+const SESSION_KEY = "spac.portal.session";
+
+function loadSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null; // storage unavailable / corrupt — fall back to the login screen
+  }
+}
+function saveSession(session) {
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch {}
+}
+function clearSession() {
+  try { localStorage.removeItem(SESSION_KEY); } catch {}
+}
+
+const MEMBER = {
+  name: "Ana Sofia Carvalho",
+  number: "04821",
+  status: "Full member",
+  role: "Captain (CPT)",
+  scaleYear: 8,
+  employer: "Ryanair DAC",
+  base: "Lisbon (LIS)",
+  since: "14 March 2016",
+  dues: "€15.00 / month — direct debit",
+  duesStatus: "Up to date",
+  rep: "Rui Tavares",
+  email: "ana.carvalho@example.pt",
+  phone: "+351 9XX XXX XXX",
+  meeting: "27 June 2026 · 14:30",
+};
+
 export default function App() {
-  const [view, setView] = useState("login"); // login | home | member | chat
-  const [num, setNum] = useState("");
+  const [saved] = useState(loadSession); // read the device session once, on mount
+  const [view, setView] = useState(saved?.member ? "home" : "login"); // login | home | member | chat
+  const [num, setNum] = useState(saved?.num || "");
   const [pwd, setPwd] = useState("");
-  const [member, setMember] = useState(null);
+  const [member, setMember] = useState(saved?.member || null);
   const [authErr, setAuthErr] = useState("");
 
   function login() {
@@ -417,23 +455,18 @@ export default function App() {
       return;
     }
     setAuthErr("");
-    setMember({
-      name: "Ana Sofia Carvalho",
-      number: "04821",
-      status: "Full member",
-      role: "Captain (CPT)",
-      scaleYear: 8,
-      employer: "Ryanair DAC",
-      base: "Lisbon (LIS)",
-      since: "14 March 2016",
-      dues: "€15.00 / month — direct debit",
-      duesStatus: "Up to date",
-      rep: "Rui Tavares",
-      email: "ana.carvalho@example.pt",
-      phone: "+351 9XX XXX XXX",
-      meeting: "27 June 2026 · 14:30",
-    });
+    setMember(MEMBER);
+    saveSession({ num: num.trim(), member: MEMBER }); // remember on this device
     setView("home");
+  }
+
+  function logout() {
+    clearSession(); // wipe the saved login data from the device
+    setMember(null);
+    setNum("");
+    setPwd("");
+    setAuthErr("");
+    setView("login");
   }
 
   return (
@@ -443,7 +476,7 @@ export default function App() {
         <Login num={num} setNum={setNum} pwd={pwd} setPwd={setPwd} onLogin={login} authErr={authErr} clearErr={() => setAuthErr("")} />
       ) : (
         <>
-          <Board member={member} onLogout={() => { setView("login"); setNum(""); setPwd(""); setAuthErr(""); }} />
+          <Board member={member} onLogout={logout} />
           <div className="shell">
             {view === "home" && <Home onPick={setView} />}
             {view === "member" && <Member member={member} onBack={() => setView("home")} />}
