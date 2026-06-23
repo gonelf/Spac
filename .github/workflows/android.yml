@@ -46,6 +46,15 @@ jobs:
         run: |
           yes | sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" >/dev/null
 
+      # Cache the bundled model weights so each APK build doesn't re-download
+      # ~0.3 GB from the Hugging Face hub. fetch-model.mjs (run via "prebuild")
+      # skips files already present.
+      - name: Cache bundled model weights
+        uses: actions/cache@v4
+        with:
+          path: spac-portal-android/public/models
+          key: llm-model-${{ hashFiles('spac-portal-android/scripts/fetch-model.mjs') }}
+
       - name: Install web dependencies
         run: npm ci
 
@@ -57,6 +66,18 @@ jobs:
 
       - name: Sync Capacitor
         run: npx cap sync android
+
+      # The model weights (~0.3 GB .onnx) are bundled as app assets. Android's
+      # compressDebugAssets task OOMs ("Java heap space") trying to compress a
+      # file that large — and compressing already-quantized weights is pointless.
+      # Mark the binary model/runtime assets noCompress, and give Gradle more heap.
+      - name: Configure Gradle for large bundled model assets
+        run: |
+          {
+            echo ''
+            echo 'android { androidResources { noCompress += ["onnx", "wasm", "bin", "data", "task"] } }'
+          } >> android/app/build.gradle
+          printf '\norg.gradle.jvmargs=-Xmx5g\n' >> android/gradle.properties
 
       - name: Build debug APK
         run: ./gradlew assembleDebug --no-daemon
